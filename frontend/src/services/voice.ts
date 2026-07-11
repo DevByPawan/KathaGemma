@@ -27,3 +27,20 @@ export const deleteVoiceHistory = async (): Promise<void> => {
   const childId = getChildId();
   await api.delete(`/voice/history/${childId}`);
 };
+
+export interface VoiceHistoryLog {
+  id: string;
+  transcript: string;
+  aiResponse: string;
+  duration: number;
+  createdAt: string;
+}
+
+/**
+ * Fetches the voice history for the current child session.
+ */
+export const getVoiceHistory = async (): Promise<VoiceHistoryLog[]> => {
+  const childId = getChildId();
+  const response = await api.get(`/voice/history/${childId}`);
+  return response.data.data;
+};
