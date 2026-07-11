@@ -13,7 +13,7 @@ export const analyzePhotoSchema = z.object({
   body: z.object({
     childId: z.string().uuid('Invalid child ID format'),
     missionId: z.string().min(1, 'Mission ID cannot be empty'),
-    imageUrl: z.string().url('Invalid image URL format'),
+    imageUrl: z.string().min(1, 'Image URL/Data cannot be empty'),
   }),
 });
 

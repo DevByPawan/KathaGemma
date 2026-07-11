@@ -530,7 +530,7 @@ export default function Home() {
               grad: 'from-orange-600/80 to-pink-600/80',
               border: 'border-orange-500/20',
               glow: '#F97316',
-              onClick: () => navigate('/voice'),
+              onClick: () => navigate('/camera'),
               svgPath: (
                 <svg viewBox="0 0 48 48" className="size-8" aria-hidden="true">
                   <rect x="6" y="14" width="36" height="26" rx="5" fill="white" opacity="0.9" />

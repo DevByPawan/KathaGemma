@@ -28,3 +28,4 @@ if (!apiKey) {
  *   const model = geminiClient.models;
  */
 export const geminiClient = new GoogleGenAI({ apiKey: apiKey ?? '' });
+export const GEMINI_MODEL = 'gemini-flash-latest';

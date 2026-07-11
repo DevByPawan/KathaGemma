@@ -65,40 +65,73 @@ export class CameraService {
    * Analyzes an uploaded camera photo and awards badges + XP upon match completion.
    */
   async analyzePhoto(childId: string, missionId: string, imageUrl: string) {
-    logger.info(`Analyzing camera photo for child ${childId}, mission ${missionId}, URL: ${imageUrl}`);
+    logger.info(`Analyzing camera photo for child ${childId}, mission ${missionId}, URL length: ${imageUrl?.length}`);
 
     await this.ensureChildExists(childId);
 
-    await prisma.child.update({
-      where: { id: childId },
-      data: {
-        xp: { increment: 50 },
-      },
-    });
+    // Call real Gemini Vision service
+    const gemmaResult = await gemmaService.analyzePhoto(missionId, imageUrl);
 
-    await prisma.xPLog.create({
-      data: {
-        childId,
-        amount: 50,
-        reason: `Completed Scavenger Mission: ${missionId}`,
-      },
-    });
+    if (!gemmaResult.success || !gemmaResult.data) {
+      throw new Error(gemmaResult.error || 'Failed to analyze photo with Gemini Vision');
+    }
 
-    await prisma.achievement.create({
-      data: {
-        childId,
-        badgeName: 'Nature Explorer',
-        description: `Successfully found a ${missionId} using the Camera module!`,
-        icon: 'camera',
-      },
-    });
+    const { matched, confidence, explanation } = gemmaResult.data;
+
+    let rewardXP = 0;
+    let badge: string | null = null;
+
+    if (matched) {
+      rewardXP = 50;
+      badge = 'Nature Explorer';
+
+      // Record XP and Badge achievement in database
+      await prisma.child.update({
+        where: { id: childId },
+        data: {
+          xp: { increment: rewardXP },
+        },
+      });
+
+      await prisma.xPLog.create({
+        data: {
+          childId,
+          amount: rewardXP,
+          reason: `Completed Scavenger Mission: ${missionId}`,
+        },
+      });
+
+      const existingBadge = await prisma.achievement.findFirst({
+        where: {
+          childId,
+          badgeName: badge,
+          icon: 'camera',
+        },
+      });
+
+      if (!existingBadge) {
+        await prisma.achievement.create({
+          data: {
+            childId,
+            badgeName: badge,
+            description: `Successfully found a ${missionId} using the Camera module!`,
+            icon: 'camera',
+          },
+        });
+      }
+    }
 
     return {
       success: true,
-      matched: true,
-      confidence: 0.94,
-      rewardXP: 50,
-      badge: 'Nature Explorer',
+      matched,
+      confidence,
+      rewardXP,
+      badge,
+      explanation,
+      mission: {
+        target: missionId,
+        completed: matched,
+      },
     };
   }
 
