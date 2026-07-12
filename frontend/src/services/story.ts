@@ -4,6 +4,7 @@ export interface StoryStartResponse {
   storyId: string;
   title: string;
   story: string[];
+  choices?: Array<{ id: string; text: string }>;
   createdAt: string;
 }
 
@@ -13,6 +14,7 @@ export interface StoryDetailsResponse {
   prompt: string;
   language: string;
   generatedStory: string[];
+  choices?: Array<{ id: string; text: string }>;
   difficulty: string;
   status: string;
   createdAt: string;

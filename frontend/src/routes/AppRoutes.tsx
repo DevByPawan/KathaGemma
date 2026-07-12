@@ -8,7 +8,6 @@ import Story from '../pages/Story';
 import Voice from '../pages/Voice';
 import Camera from '../pages/Camera';
 import Celebration from '../pages/Celebration';
-import Choice from '../pages/Choice';
 import Parent from '../pages/Parent';
 import { AppShell } from '../components/layout/AppShell';
 import LoadingScreen from '../components/common/LoadingScreen';
@@ -40,7 +39,6 @@ const router = createBrowserRouter([
     ],
   },
   { path: '/story', element: <Story /> },
-  { path: '/choice', element: <Choice /> },
   { path: '/voice', element: <Voice /> },
   { path: '/camera', element: <Camera /> },
   { path: '/celebration', element: <Celebration /> },

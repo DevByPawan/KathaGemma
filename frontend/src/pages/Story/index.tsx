@@ -40,8 +40,6 @@ const StoryIllustration = () => (
   </motion.div>
 );
 
-// ── Prompt button config ─────────────────────────────────────────────────────
-
 interface PromptButton {
   label: string;
   action: 'next' | 'again' | 'explain' | 'ending';
@@ -52,6 +50,14 @@ const PROMPT_BUTTONS: PromptButton[] = [
   { label: 'Tell it again.', action: 'again' },
   { label: 'Explain this.', action: 'explain' },
   { label: 'Change the ending.', action: 'ending' },
+];
+
+const CHOICE_STYLES = [
+  { emoji: '🦊', colorClass: 'border-orange-500/20 hover:border-orange-500 bg-orange-500/5' },
+  { emoji: '🌳', colorClass: 'border-emerald-500/20 hover:border-emerald-500 bg-emerald-500/5' },
+  { emoji: '🐦', colorClass: 'border-blue-500/20 hover:border-blue-500 bg-blue-500/5' },
+  { emoji: '🏡', colorClass: 'border-rose-500/20 hover:border-rose-500 bg-rose-500/5' },
+  { emoji: '⭐', colorClass: 'border-yellow-500/20 hover:border-yellow-500 bg-yellow-500/5' },
 ];
 
 export default function Story() {
@@ -66,10 +72,15 @@ export default function Story() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState<0.75 | 1 | 1.25>(1);
 
-  // Companion reply state (replaces alert)
+  // Companion voice prompts reply state
   const [companionReply, setCompanionReply] = useState<string | null>(null);
   const [isCompanionLoading, setIsCompanionLoading] = useState(false);
   const [activePromptAction, setActivePromptAction] = useState<string | null>(null);
+
+  // Choice progression states
+  const [choices, setChoices] = useState<Array<{ id: string; text: string }>>([]);
+  const [storyStatus, setStoryStatus] = useState<'STARTED' | 'COMPLETED'>('STARTED');
+  const [isGeneratingNext, setIsGeneratingNext] = useState(false);
 
   // Load story details or initialize one
   useEffect(() => {
@@ -80,6 +91,8 @@ export default function Story() {
           const details = await getStoryDetails(storyId);
           setSentences(details.generatedStory);
           setStoryTitle(details.title);
+          setChoices(details.choices || []);
+          setStoryStatus((details.status || 'STARTED') as 'STARTED' | 'COMPLETED');
         } else {
           const stories = await getChildStories();
           if (stories && stories.length > 0) {
@@ -104,11 +117,10 @@ export default function Story() {
     fetchStory();
   }, [storyId, navigate]);
 
-  // Auto-narration simulation logic: progress index at timing based on speed
+  // Auto-narration simulation logic
   useEffect(() => {
     if (!isPlaying || sentences.length === 0) return;
 
-    // Calculate duration in milliseconds: 4.5s divided by playback speed
     const duration = 4500 / playbackSpeed;
 
     const timer = setInterval(() => {
@@ -116,7 +128,7 @@ export default function Story() {
         if (prev < sentences.length - 1) {
           return prev + 1;
         } else {
-          setIsPlaying(false); // End of story reached
+          setIsPlaying(false);
           return prev;
         }
       });
@@ -131,20 +143,40 @@ export default function Story() {
 
   const handleNext = () => {
     if (activeSentence === sentences.length - 1) {
-      navigate(`/choice?id=${storyId || ''}`);
+      if (storyStatus === 'COMPLETED') {
+        navigate(`/celebration?id=${storyId || ''}`);
+      }
     } else {
       setActiveSentence((prev) => Math.min(sentences.length - 1, prev + 1));
     }
   };
 
-  /**
-   * Handles the 4 companion prompt buttons with real API calls.
-   * No alert() calls — all responses are displayed inline.
-   */
+  const handleChoiceSelection = async (choiceText: string) => {
+    if (!storyId || isGeneratingNext) return;
+
+    try {
+      setIsGeneratingNext(true);
+      setCompanionReply(null);
+      
+      const updated = await continueStory(storyId, choiceText);
+      const newChapters = updated.generatedStory as string[];
+      
+      setSentences(newChapters);
+      setChoices(updated.choices || []);
+      setStoryStatus((updated.status || 'STARTED') as 'STARTED' | 'COMPLETED');
+      
+      // Instantly position active view to the new chapter text page
+      setActiveSentence(newChapters.length - 1);
+    } catch (err) {
+      console.error('Failed to submit choice:', err);
+    } finally {
+      setIsGeneratingNext(false);
+    }
+  };
+
   const handlePrompt = async (action: PromptButton['action']) => {
     if (!storyId) return;
 
-    // Clear any previous reply
     setCompanionReply(null);
     setIsCompanionLoading(true);
     setActivePromptAction(action);
@@ -155,17 +187,23 @@ export default function Story() {
 
       switch (action) {
         case 'next': {
-          // Continue the story choosing "next chapter" as the choice
-          const updated = await continueStory(storyId, 'Continue to the next chapter');
-          const newChapters = updated.generatedStory as string[];
-          setSentences(newChapters);
-          setActiveSentence(newChapters.length - 1);
-          setCompanionReply('✨ New chapter added! Keep reading below.');
+          // If we have dynamic choices, select the first choice option automatically as a nudge!
+          if (choices.length > 0 && choices[0]) {
+            await handleChoiceSelection(choices[0].text);
+            setCompanionReply('✨ Choice selected! Writing continuation...');
+          } else {
+            const updated = await continueStory(storyId, 'Continue to the next chapter');
+            const newChapters = updated.generatedStory as string[];
+            setSentences(newChapters);
+            setChoices(updated.choices || []);
+            setStoryStatus((updated.status || 'STARTED') as 'STARTED' | 'COMPLETED');
+            setActiveSentence(newChapters.length - 1);
+            setCompanionReply('✨ New chapter added!');
+          }
           break;
         }
 
         case 'again': {
-          // Ask the voice companion to re-narrate the current sentence
           const voiceRes = await sendVoiceMessage(
             `Please re-tell this part of the story in a fun way: "${currentChapterText}"`,
             language,
@@ -176,7 +214,6 @@ export default function Story() {
         }
 
         case 'explain': {
-          // Ask companion to explain the current chapter in simpler terms
           const voiceRes = await sendVoiceMessage(
             `Explain this in very simple words for a 5-year-old: "${currentChapterText}"`,
             language,
@@ -187,18 +224,19 @@ export default function Story() {
         }
 
         case 'ending': {
-          // Continue the story with an alternate ending
           const updated = await continueStory(storyId, 'Create a surprising and different ending');
           const newChapters = updated.generatedStory as string[];
           setSentences(newChapters);
+          setChoices(updated.choices || []);
+          setStoryStatus((updated.status || 'STARTED') as 'STARTED' | 'COMPLETED');
           setActiveSentence(newChapters.length - 1);
-          setCompanionReply('🎭 Here is a different ending for you!');
+          setCompanionReply('🎭 Different ending prepared!');
           break;
         }
       }
     } catch (error) {
       console.error(`handlePrompt(${action}) failed:`, error);
-      setCompanionReply('Oops! Katha is thinking... please try again in a moment.');
+      setCompanionReply('Oops! Sparky is thinking... please try again!');
     } finally {
       setIsCompanionLoading(false);
     }
@@ -212,6 +250,8 @@ export default function Story() {
       </div>
     );
   }
+
+  const isLatestChapter = activeSentence === sentences.length - 1;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-sky-400 to-sky-200 text-zinc-950 font-sans flex flex-col justify-between relative overflow-hidden">
@@ -255,10 +295,10 @@ export default function Story() {
         initial={{ y: "80%" }}
         animate={{ y: 0 }}
         transition={{ type: "spring", stiffness: 220, damping: 28 }}
-        className="w-full max-w-md mx-auto bg-white rounded-t-[2.5rem] p-6 pb-8 shadow-[0_-10px_30px_rgba(0,0,0,0.12)] flex flex-col gap-6 z-20"
+        className="w-full max-w-md mx-auto bg-white rounded-t-[2.5rem] p-6 pb-8 shadow-[0_-10px_30px_rgba(0,0,0,0.12)] flex flex-col gap-6 z-20 overflow-y-auto max-h-[70vh]"
       >
         {/* Narrated Text Area */}
-        <div className="space-y-4 min-h-[140px]">
+        <div className="space-y-4 min-h-[100px]">
           <div className="flex items-center gap-2 text-primary">
             <Volume2 className="size-5" />
             <span className="text-[10px] font-extrabold uppercase tracking-widest">Audible Narration</span>
@@ -273,7 +313,7 @@ export default function Story() {
                   onClick={() => setActiveSentence(idx)}
                   className={`inline-block mr-1.5 cursor-pointer text-base md:text-lg font-bold rounded-lg transition-all duration-300
                     ${isCurrent 
-                      ? 'text-primary bg-primary/10 px-1 py-0.5 scale-102 font-extrabold ring-1 ring-primary/20' 
+                      ? 'text-primary bg-primary/10 px-1.5 py-0.5 scale-102 font-extrabold ring-1 ring-primary/20' 
                       : 'text-zinc-500 hover:text-zinc-800'
                     }`}
                 >
@@ -286,7 +326,6 @@ export default function Story() {
 
         {/* Audio Navigation Controls */}
         <div className="flex items-center justify-between border-t border-zinc-100 pt-4">
-          {/* Speed Selector */}
           <div className="flex items-center gap-1 rounded-full border border-zinc-200 p-0.5 bg-zinc-50">
             {([0.75, 1, 1.25] as const).map((speed) => (
               <button
@@ -304,14 +343,13 @@ export default function Story() {
             ))}
           </div>
 
-          {/* Primary Skip/Play Triggers */}
           <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={handlePrev}
               disabled={activeSentence === 0}
-              aria-label="Previous sentence"
-              className="p-2 rounded-full border border-zinc-200 bg-zinc-50 hover:bg-zinc-100 disabled:opacity-40 outline-none select-none focus-visible:ring-2 focus-visible:ring-primary"
+              aria-label="Previous chapter"
+              className="p-2 rounded-full border border-zinc-200 bg-zinc-50 hover:bg-zinc-100 disabled:opacity-40 outline-none select-none"
             >
               <ChevronLeft className="size-5 text-zinc-700" />
             </button>
@@ -320,7 +358,7 @@ export default function Story() {
               type="button"
               onClick={() => setIsPlaying(!isPlaying)}
               aria-label={isPlaying ? "Pause narration" : "Play narration"}
-              className="p-3.5 rounded-full bg-primary text-white shadow-md hover:scale-105 active:scale-95 transition-all outline-none select-none focus-visible:ring-2 focus-visible:ring-primary/50"
+              className="p-3.5 rounded-full bg-primary text-white shadow-md hover:scale-105 active:scale-95 transition-all outline-none"
             >
               {isPlaying ? <Pause className="size-6 fill-current" /> : <Play className="size-6 fill-current" />}
             </button>
@@ -328,17 +366,66 @@ export default function Story() {
             <button
               type="button"
               onClick={handleNext}
-              aria-label="Next sentence"
-              className={`p-2 rounded-full border outline-none select-none focus-visible:ring-2 focus-visible:ring-primary transition-all duration-200
-                ${activeSentence === sentences.length - 1 
-                  ? 'border-primary bg-primary text-white hover:bg-primary/90 hover:scale-105 shadow-md' 
-                  : 'border-zinc-200 bg-zinc-50 hover:bg-zinc-100 text-zinc-700'
+              disabled={activeSentence === sentences.length - 1 && storyStatus !== 'COMPLETED'}
+              aria-label="Next chapter"
+              className={`p-2 rounded-full border outline-none select-none transition-all duration-200
+                ${activeSentence === sentences.length - 1 && storyStatus === 'COMPLETED'
+                  ? 'border-emerald-500 bg-emerald-500 text-white hover:bg-emerald-600 hover:scale-105 shadow-md' 
+                  : 'border-zinc-200 bg-zinc-50 hover:bg-zinc-100 text-zinc-700 disabled:opacity-30'
                 }`}
             >
               <ChevronRight className="size-5" />
             </button>
           </div>
         </div>
+
+        {/* ── DYNAMIC INLINE CHOICES AREA ── */}
+        {isLatestChapter && (
+          <div className="border-t border-zinc-100 pt-4 space-y-3">
+            {storyStatus === 'COMPLETED' ? (
+              <div className="space-y-3">
+                <div className="bg-emerald-50 text-emerald-800 p-4 rounded-2xl border border-emerald-100 text-center text-sm font-bold flex flex-col items-center justify-center gap-1">
+                  <span>🎉 The story has reached a beautiful ending!</span>
+                  <span className="text-[10px] text-emerald-600 font-semibold uppercase tracking-wider">Completed all 5 chapters</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => navigate(`/celebration?id=${storyId || ''}`)}
+                  className="w-full py-4 px-6 bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold text-base rounded-2xl shadow-md transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <span>Finish Book & Celebrate</span>
+                  <Sparkles className="size-5 animate-pulse" />
+                </button>
+              </div>
+            ) : isGeneratingNext ? (
+              <div className="flex flex-col items-center justify-center py-6 gap-2 text-center text-primary">
+                <Loader2 className="size-8 animate-spin text-primary" />
+                <span className="text-xs font-black uppercase tracking-widest animate-pulse">Katha is writing the next chapter...</span>
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                <p className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-widest text-center">What should happen next?</p>
+                <div className="grid grid-cols-1 gap-2.5">
+                  {choices.map((choice, idx) => {
+                    const style = CHOICE_STYLES[idx % CHOICE_STYLES.length]!;
+                    return (
+                      <button
+                        key={choice.id || idx}
+                        type="button"
+                        disabled={isGeneratingNext}
+                        onClick={() => handleChoiceSelection(choice.text)}
+                        className={`flex items-center gap-3.5 p-4 rounded-2xl border text-left outline-none transition-all active:scale-98 select-none border-zinc-200/60 bg-white hover:shadow-md text-zinc-700 hover:border-primary hover:text-primary ${style.colorClass} cursor-pointer`}
+                      >
+                        <span className="text-2xl pointer-events-none select-none">{style.emoji}</span>
+                        <span className="text-sm font-bold">{choice.text}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* VOICE COMPANION ORB AREA */}
         <div className="border-t border-zinc-100 pt-4 flex flex-col items-center gap-4">
@@ -349,7 +436,6 @@ export default function Story() {
             className="scale-90"
           />
 
-          {/* Suggested prompts — now wired to real API calls */}
           <div className="w-full">
             <p className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-widest text-center mb-2">Suggested questions</p>
             <div className="flex flex-wrap gap-2 justify-center">
@@ -357,7 +443,7 @@ export default function Story() {
                 <button
                   key={btn.action}
                   type="button"
-                  disabled={isCompanionLoading}
+                  disabled={isCompanionLoading || isGeneratingNext}
                   onClick={() => handlePrompt(btn.action)}
                   className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-all active:scale-95 outline-none disabled:opacity-50 disabled:cursor-not-allowed
                     ${activePromptAction === btn.action && isCompanionLoading
@@ -376,7 +462,6 @@ export default function Story() {
             </div>
           </div>
 
-          {/* Inline companion reply — replaces all alert() calls */}
           <AnimatePresence>
             {companionReply && (
               <motion.div

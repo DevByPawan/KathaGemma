@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { gemmaService } from '@/services/gemma/gemma.service';
 import { logger } from '@/utils/logger';
+import { REWARDS_CONFIG } from '@/services/story/rewards.config';
 
 export class CameraService {
   /**
@@ -82,8 +83,8 @@ export class CameraService {
     let badge: string | null = null;
 
     if (matched) {
-      rewardXP = 50;
-      badge = 'Nature Explorer';
+      rewardXP = REWARDS_CONFIG.CAMERA_MISSION_XP;
+      badge = REWARDS_CONFIG.CAMERA_MISSION_BADGE;
 
       // Record XP and Badge achievement in database
       await prisma.child.update({

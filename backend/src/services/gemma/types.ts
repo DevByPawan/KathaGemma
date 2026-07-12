@@ -9,6 +9,7 @@ export interface StoryRequest {
 export interface StoryResponse {
   title: string;
   chapters: string[];
+  choices?: Array<{ id: string; text: string }>;
   currentChapter: number;
   totalChapters: number;
   illustrationSuggestion: string;

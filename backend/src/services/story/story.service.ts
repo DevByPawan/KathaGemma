@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { gemmaService } from '@/services/gemma/gemma.service';
 import { logger } from '@/utils/logger';
+import { REWARDS_CONFIG } from './rewards.config';
 
 export class StoryService {
   /**
@@ -49,7 +50,16 @@ export class StoryService {
       throw new Error(gemmaResponse.error || 'Failed to generate story with Gemma AI');
     }
 
-    const { title, chapters } = gemmaResponse.data;
+    const { title, chapters, choices } = gemmaResponse.data;
+
+    // Structured storage of chapter objects
+    const firstChapterObj = {
+      chapterNumber: 1,
+      title: 'Chapter 1',
+      content: chapters[0],
+      choices: choices || [],
+      createdAt: new Date().toISOString()
+    };
 
     const story = await prisma.story.create({
       data: {
@@ -57,16 +67,21 @@ export class StoryService {
         title,
         prompt,
         language,
-        generatedStory: chapters,
+        generatedStory: [firstChapterObj],
         difficulty: 'EASY',
         status: 'STARTED',
       },
     });
 
     return {
-      storyId: story.id,
+      id: story.id,
       title: story.title,
-      story: chapters,
+      prompt: story.prompt,
+      language: story.language,
+      generatedStory: [chapters[0]],
+      choices: choices || [],
+      difficulty: story.difficulty,
+      status: story.status,
       createdAt: story.createdAt,
     };
   }
@@ -88,13 +103,22 @@ export class StoryService {
       throw new Error(`Story with ID ${storyId} not found`);
     }
 
-    const previousChapters = story.generatedStory as string[];
-    const lastChapter = previousChapters[previousChapters.length - 1] || '';
+    const previousChapters = Array.isArray(story.generatedStory) ? story.generatedStory : [];
+    
+    // Concatenate previous contents for history context
+    const allPreviousText = previousChapters.map((ch: any) => {
+      if (ch && typeof ch === 'object' && 'content' in ch) {
+        return ch.content;
+      }
+      return String(ch);
+    }).join('\n\n');
+
+    const nextChapterNumber = previousChapters.length + 1;
 
     const gemmaResponse = await gemmaService.continueStory({
       storyId,
-      chapterNumber: previousChapters.length + 1,
-      previousContent: lastChapter,
+      chapterNumber: nextChapterNumber,
+      previousContent: allPreviousText,
       selectedChoice: choice,
       language: story.language,
     });
@@ -103,26 +127,87 @@ export class StoryService {
       throw new Error(gemmaResponse.error || 'Failed to continue story with Gemma AI');
     }
 
-    const newChapter = gemmaResponse.data;
-    const updatedChapters = [...previousChapters, newChapter];
+    const { chapter: nextText, choices: nextChoices } = gemmaResponse.data;
+
+    // Structured storage of new chapter
+    const nextChapterObj = {
+      chapterNumber: nextChapterNumber,
+      title: `Chapter ${nextChapterNumber}`,
+      content: nextText,
+      choices: nextChoices || [],
+      createdAt: new Date().toISOString()
+    };
+
+    const updatedChapters = [...previousChapters, nextChapterObj];
 
     await prisma.storyChoice.create({
       data: {
         storyId,
         selectedChoice: choice,
-        generatedContinuation: newChapter,
+        generatedContinuation: nextText,
       },
     });
+
+    const isCompleted = updatedChapters.length >= 5;
 
     const updatedStory = await prisma.story.update({
       where: { id: storyId },
       data: {
         generatedStory: updatedChapters,
-        status: updatedChapters.length >= 5 ? 'COMPLETED' : 'STARTED',
+        status: isCompleted ? 'COMPLETED' : 'STARTED',
       },
     });
 
-    return updatedStory;
+    // Reward achievements and XP logs dynamically based on REWARDS_CONFIG
+    if (isCompleted) {
+      await prisma.child.update({
+        where: { id: story.childId },
+        data: {
+          xp: { increment: REWARDS_CONFIG.STORY_COMPLETION_XP },
+        },
+      });
+
+      await prisma.xPLog.create({
+        data: {
+          childId: story.childId,
+          amount: REWARDS_CONFIG.STORY_COMPLETION_XP,
+          reason: `Completed Story: ${story.title}`,
+        },
+      });
+
+      const existingBadge = await prisma.achievement.findFirst({
+        where: {
+          childId: story.childId,
+          badgeName: REWARDS_CONFIG.STORY_COMPLETION_BADGE,
+          icon: 'book',
+        },
+      });
+
+      if (!existingBadge) {
+        await prisma.achievement.create({
+          data: {
+            childId: story.childId,
+            badgeName: REWARDS_CONFIG.STORY_COMPLETION_BADGE,
+            description: `Successfully finished reading the book "${story.title}"!`,
+            icon: 'book',
+          },
+        });
+      }
+    }
+
+    const chapterTexts = updatedChapters.map((ch: any) => ch.content || String(ch));
+
+    return {
+      id: updatedStory.id,
+      title: updatedStory.title,
+      prompt: updatedStory.prompt,
+      language: updatedStory.language,
+      generatedStory: chapterTexts,
+      choices: isCompleted ? [] : (nextChoices || []),
+      difficulty: updatedStory.difficulty,
+      status: updatedStory.status,
+      createdAt: updatedStory.createdAt,
+    };
   }
 
   /**
@@ -141,7 +226,7 @@ export class StoryService {
       throw new Error(`Story with ID ${storyId} not found`);
     }
 
-    return story;
+    return formatStoryResponse(story);
   }
 
   /**
@@ -149,10 +234,11 @@ export class StoryService {
    */
   async getStoriesByChild(childId: string) {
     logger.info(`Fetching stories for child ${childId}`);
-    return prisma.story.findMany({
+    const stories = await prisma.story.findMany({
       where: { childId },
       orderBy: { createdAt: 'desc' },
     });
+    return stories.map(s => formatStoryResponse(s));
   }
 
   /**
@@ -282,3 +368,40 @@ export class StoryService {
 }
 
 export const storyService = new StoryService();
+
+function formatStoryResponse(story: any) {
+  const dbChapters = Array.isArray(story.generatedStory) ? story.generatedStory : [];
+  
+  const chaptersText: string[] = [];
+  let currentChoices: any[] = [];
+  
+  dbChapters.forEach((ch: any) => {
+    if (ch && typeof ch === 'object' && 'content' in ch) {
+      chaptersText.push(ch.content);
+      currentChoices = Array.isArray(ch.choices) ? ch.choices : [];
+    } else if (ch && typeof ch === 'object' && 'text' in ch) {
+      chaptersText.push(ch.text);
+      currentChoices = Array.isArray(ch.choices) ? ch.choices : [];
+    } else if (typeof ch === 'string') {
+      chaptersText.push(ch);
+      currentChoices = [
+        { id: 'continue', text: 'Continue the adventure' },
+        { id: 'different', text: 'Take a different path' },
+        { id: 'end', text: 'End the story here' }
+      ];
+    }
+  });
+
+  return {
+    id: story.id,
+    childId: story.childId,
+    title: story.title,
+    prompt: story.prompt,
+    language: story.language,
+    generatedStory: chaptersText,
+    choices: story.status === 'COMPLETED' ? [] : currentChoices,
+    difficulty: story.difficulty,
+    status: story.status,
+    createdAt: story.createdAt,
+  };
+}

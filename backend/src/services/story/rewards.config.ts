@@ -1,0 +1,6 @@
+export const REWARDS_CONFIG = {
+  STORY_COMPLETION_XP: 100,
+  STORY_COMPLETION_BADGE: 'Bookworm',
+  CAMERA_MISSION_XP: 50,
+  CAMERA_MISSION_BADGE: 'Nature Explorer',
+};
