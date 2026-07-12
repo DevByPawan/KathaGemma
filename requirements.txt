@@ -1,0 +1,28 @@
+# Core LLM, APIs, and Orchestration
+google-generativeai>=0.4.0
+huggingface_hub>=0.20.0
+google-adk
+langchain-core
+langchain-google-genai
+langchain-text-splitters
+
+# Vector Database and Document Processing
+chromadb>=0.4.22
+sentence-transformers>=2.2.2
+pymupdf>=1.28.0
+pypdf>=4.0.0
+numpy>=1.24.0
+
+# Model Fine-tuning (QLoRA)
+torch>=2.1.2
+transformers>=4.38.0
+peft>=0.8.2
+trl>=0.7.10
+bitsandbytes>=0.42.0
+accelerate>=0.27.0
+
+# Audio and Vision Inputs/Outputs
+sounddevice>=0.4.6
+scipy>=1.11.4
+pyttsx3>=2.90
+Pillow>=10.2.0

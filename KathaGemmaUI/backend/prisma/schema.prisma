@@ -1,0 +1,123 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum UserRole {
+  PARENT
+  TEACHER
+  ADMIN
+}
+
+enum StoryStatus {
+  STARTED
+  COMPLETED
+  ABANDONED
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+model User {
+  id           String    @id @default(uuid())
+  fullName     String
+  email        String    @unique
+  passwordHash String
+  role         UserRole  @default(PARENT)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  children     Child[]
+
+  @@index([email])
+}
+
+model Child {
+  id           String         @id @default(uuid())
+  parentId     String
+  parent       User           @relation(fields: [parentId], references: [id], onDelete: Cascade)
+  name         String
+  age          Int
+  avatar       String
+  language     String
+  xp           Int            @default(0)
+  streak       Int            @default(0)
+  currentLevel Int            @default(1)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  stories      Story[]
+  achievements Achievement[]
+  xpLogs       XPLog[]
+  voiceHistory VoiceHistory[]
+
+  @@index([parentId])
+}
+
+model Story {
+  id             String        @id @default(uuid())
+  childId        String
+  child          Child         @relation(fields: [childId], references: [id], onDelete: Cascade)
+  title          String
+  prompt         String
+  language       String
+  generatedStory Json
+  summary        String?
+  difficulty     Difficulty    @default(EASY)
+  status         StoryStatus   @default(STARTED)
+  createdAt      DateTime      @default(now())
+  choices        StoryChoice[]
+
+  @@index([childId])
+}
+
+model StoryChoice {
+  id                   String   @id @default(uuid())
+  storyId              String
+  story                Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  selectedChoice       String
+  generatedContinuation Json
+  createdAt            DateTime @default(now())
+
+  @@index([storyId])
+}
+
+model Achievement {
+  id          String   @id @default(uuid())
+  childId     String
+  child       Child    @relation(fields: [childId], references: [id], onDelete: Cascade)
+  badgeName   String
+  description String
+  icon        String
+  unlockedAt  DateTime @default(now())
+
+  @@index([childId])
+}
+
+model XPLog {
+  id        String   @id @default(uuid())
+  childId   String
+  child     Child    @relation(fields: [childId], references: [id], onDelete: Cascade)
+  amount    Int
+  reason    String
+  createdAt DateTime @default(now())
+
+  @@index([childId])
+}
+
+model VoiceHistory {
+  id         String   @id @default(uuid())
+  childId    String
+  child      Child    @relation(fields: [childId], references: [id], onDelete: Cascade)
+  transcript String
+  aiResponse String
+  duration   Int
+  createdAt  DateTime @default(now())
+
+  @@index([childId])
+}
