@@ -4,6 +4,8 @@ export interface VoiceChatResponse {
   success: boolean;
   reply: string;
   timestamp: string;
+  uiAction?: string;
+  expectedInput?: string;
 }
 
 /**

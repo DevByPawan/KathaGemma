@@ -530,6 +530,8 @@ def voice_chat(request: VoiceChatRequest):
         return {
             "success": True,
             "reply": reply,
+            "uiAction": response_json.get("ui_action"),
+            "expectedInput": response_json.get("expected_input"),
             "timestamp": datetime.datetime.now().isoformat()
         }
     except Exception as e:

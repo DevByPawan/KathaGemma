@@ -17,6 +17,8 @@ export default function Voice() {
   const [transcript, setTranscript] = useState('');
   const [speechText, setSpeechText] = useState('');
   const [fullReplyText, setFullReplyText] = useState('');
+  const [expectedInput, setExpectedInput] = useState<string | null>(null);
+  const [uiAction, setUiAction] = useState<string | null>(null);
 
   // Real browser Speech Recognition with simulation fallback
   useEffect(() => {
@@ -24,6 +26,8 @@ export default function Voice() {
       setTranscript('');
       return;
     }
+    setExpectedInput(null);
+    setUiAction(null);
 
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -92,10 +96,14 @@ export default function Voice() {
         const response = await sendVoiceMessage(userTranscript, language, storyId || undefined);
         
         setFullReplyText(response.reply);
+        setExpectedInput(response.expectedInput || null);
+        setUiAction(response.uiAction || null);
         setCurrentState('speaking');
       } catch (error) {
         console.error('Failed to get voice reply:', error);
         setFullReplyText('Oh, my magical sensors are a bit busy! Let’s talk again in a moment.');
+        setExpectedInput(null);
+        setUiAction(null);
         setCurrentState('speaking');
       }
     };
@@ -324,6 +332,30 @@ export default function Voice() {
                   </p>
                 </div>
                 
+                {/* ACTIVE CAMERA QUEST DETECTED */}
+                {(expectedInput === 'image' || uiAction === 'TRIGGER_CAMERA') && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.98 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="p-4 rounded-xl border border-dashed border-primary bg-primary/5 space-y-3"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">📷</span>
+                      <div>
+                        <h5 className="text-xs font-black text-white uppercase tracking-wider">Active Camera Quest</h5>
+                        <p className="text-[10px] text-zinc-400 font-semibold mt-0.5">Let's show Katha the physical item!</p>
+                      </div>
+                    </div>
+                    <Button
+                      onClick={() => navigate(`/camera?id=${storyId || ''}`)}
+                      className="w-full shadow-lg text-xs font-black bg-gradient-to-r from-primary to-amber-500 hover:from-primary/95 hover:to-amber-500/95 cursor-pointer animate-pulse"
+                      size="sm"
+                    >
+                      Open Magic Camera
+                    </Button>
+                  </motion.div>
+                )}
+
                 <motion.div
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
